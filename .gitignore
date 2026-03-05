@@ -1,1 +1,8 @@
 config.py
+.venv
+.claude
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
