@@ -35,8 +35,9 @@ class AIStates(StatesGroup):
 def _main_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text='/start'),   KeyboardButton(text='/news')],
-            [KeyboardButton(text='/weather'), KeyboardButton(text='/AI')],
+            [KeyboardButton(text='/news'),
+             KeyboardButton(text='/weather'),
+             KeyboardButton(text='/AI')],
         ],
         resize_keyboard=True,
     )
