@@ -15,6 +15,7 @@ async def main():
         BotCommand(command='news',    description='📰 Новости Tengri'),
         BotCommand(command='weather', description='🌤 Погода'),
         BotCommand(command='ai',      description='🤖 Спросить Claude'),
+        BotCommand(command='history', description='📋 История диалога с Claude'),
         BotCommand(command='clear',   description='🗑 Очистить историю Claude'),
     ])
 
