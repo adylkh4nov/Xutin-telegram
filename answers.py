@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.types import (
@@ -15,15 +18,16 @@ from config import claude_token
 import anthropic
 
 router = Router()
+log = logging.getLogger(__name__)
 
 
 # ─── FSM состояния ───────────────────────────────────────────────────────────
 
 class WeatherStates(StatesGroup):
-    waiting = State()   # ждём город или геолокацию
+    waiting = State()
 
 class AIStates(StatesGroup):
-    chatting = State()  # ждём запрос для Claude
+    chatting = State()
 
 
 # ─── Клавиатуры ──────────────────────────────────────────────────────────────
@@ -67,7 +71,12 @@ async def cmd_news(message: Message):
     markup = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text='🔗 Открыть сайт', url='https://tengrinews.kz/'),
     ]])
-    text = tenrgi.get_news()
+    try:
+        # requests — синхронный, запускаем в потоке чтобы не блокировать event loop
+        text = await asyncio.to_thread(tenrgi.get_news)
+    except Exception as e:
+        log.error('tenrgi error: %s', e)
+        text = '❌ Не удалось загрузить новости.'
     await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
 
 
@@ -86,7 +95,15 @@ async def cmd_weather(message: Message, state: FSMContext):
 async def weather_by_location(message: Message, state: FSMContext):
     await state.clear()
     await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
-    text = w.get_weather_by_coords(message.location.latitude, message.location.longitude)
+    try:
+        text = await asyncio.to_thread(
+            w.get_weather_by_coords,
+            message.location.latitude,
+            message.location.longitude,
+        )
+    except Exception as e:
+        log.error('weather_by_coords error: %s', e)
+        text = '❌ Не удалось получить погоду по геолокации.'
     await message.answer(text, reply_markup=_main_kb())
 
 @router.message(WeatherStates.waiting, F.text == '❌ Отмена')
@@ -98,7 +115,11 @@ async def weather_cancel(message: Message, state: FSMContext):
 async def weather_by_city(message: Message, state: FSMContext):
     await state.clear()
     await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
-    text = w.get_weather(message.text.strip())
+    try:
+        text = await asyncio.to_thread(w.get_weather, message.text.strip())
+    except Exception as e:
+        log.error('weather_by_city error: %s', e)
+        text = '❌ Не удалось получить погоду.'
     await message.answer(text, reply_markup=_main_kb())
 
 
@@ -125,20 +146,24 @@ async def ai_chat(message: Message, state: FSMContext):
     history: list = data.get('history', [])
     history.append({'role': 'user', 'content': message.text})
 
-    # Ограничиваем историю последними 20 сообщениями (10 пар)
     if len(history) > 20:
         history = history[-20:]
 
     try:
-        client = anthropic.Anthropic(api_key=claude_token)
-        response = client.messages.create(
-            model='claude-opus-4-6',
-            max_tokens=2000,
-            messages=history,
-        )
+        # Anthropic SDK тоже синхронный — запускаем в потоке
+        def _call_claude():
+            client = anthropic.Anthropic(api_key=claude_token)
+            return client.messages.create(
+                model='claude-opus-4-6',
+                max_tokens=2000,
+                messages=history,
+            )
+
+        response = await asyncio.to_thread(_call_claude)
         reply = response.content[0].text
         history.append({'role': 'assistant', 'content': reply})
         await state.update_data(history=history)
         await message.answer(reply)
     except Exception as e:
-        await message.answer(f'Ошибка Claude: {e}')
+        log.error('claude error: %s', e)
+        await message.answer(f'❌ Ошибка Claude: {e}')
