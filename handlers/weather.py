@@ -5,6 +5,7 @@ from aiogram.filters import Command, StateFilter
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.enums import ChatAction
 
 from .keyboards import main_kb, weather_kb
 from services import weather as weather_service
@@ -35,10 +36,8 @@ async def cmd_weather(message: Message, state: FSMContext):
 @router.message(F.location, StateFilter('*'))
 async def weather_by_location(message: Message, state: FSMContext):
     await state.clear()
-
-    # Отвечаем МГНОВЕННО — иначе Telegram показывает «недоступно»
-    msg = await message.answer('⏳ Определяю погоду по геолокации…', reply_markup=main_kb())
-
+    # send_chat_action — мгновенно показывает «печатает…», не требует редактирования
+    await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
     try:
         text = await asyncio.wait_for(
             asyncio.to_thread(
@@ -54,8 +53,7 @@ async def weather_by_location(message: Message, state: FSMContext):
     except Exception as e:
         log.error('weather coords error: %s', e)
         text = '❌ Не удалось получить погоду по геолокации.'
-
-    await msg.edit_text(text)
+    await message.answer(text, reply_markup=main_kb())
 
 
 @router.message(WeatherStates.waiting, F.text == '❌ Отмена')
@@ -67,10 +65,7 @@ async def weather_cancel(message: Message, state: FSMContext):
 @router.message(WeatherStates.waiting, F.text)
 async def weather_by_city(message: Message, state: FSMContext):
     await state.clear()
-
-    # Тоже отвечаем мгновенно, потом редактируем
-    msg = await message.answer('⏳ Получаю погоду…', reply_markup=main_kb())
-
+    await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
     try:
         text = await asyncio.wait_for(
             asyncio.to_thread(weather_service.get_weather, message.text.strip()),
@@ -82,5 +77,4 @@ async def weather_by_city(message: Message, state: FSMContext):
     except Exception as e:
         log.error('weather city error: %s', e)
         text = '❌ Не удалось получить погоду.'
-
-    await msg.edit_text(text)
+    await message.answer(text, reply_markup=main_kb())
