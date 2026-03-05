@@ -1,24 +1,24 @@
+"""Получение погоды через OpenWeatherMap API."""
 import html
 import datetime
 import warnings
 import requests
-from datetime import datetime as d
+from datetime import datetime as dt
 from config import weather_token
 
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
-# Русские названия месяцев — без locale, работает везде
+_API = 'https://api.openweathermap.org/data/2.5/weather'
+
 _MONTHS = {
     1: 'января',   2: 'февраля',  3: 'марта',    4: 'апреля',
     5: 'мая',      6: 'июня',     7: 'июля',      8: 'августа',
     9: 'сентября', 10: 'октября', 11: 'ноября',   12: 'декабря',
 }
 
-_API = 'https://api.openweathermap.org/data/2.5/weather'
-
 
 def _format(data: dict) -> str:
-    """Форматирует JSON ответа OWM в HTML-строку."""
+    """Форматирует JSON-ответ OWM в HTML-строку."""
     city_name   = html.escape(data['name'])
     cur_weather = int(data['main']['temp'])
     feels_like  = int(data['main']['feels_like'])
@@ -29,12 +29,10 @@ def _format(data: dict) -> str:
     sunset      = datetime.datetime.fromtimestamp(data['sys']['sunset'])
     length_day  = sunset - sunrise
 
-    now  = d.now()
+    now  = dt.now()
     date = f"{now.day} {_MONTHS[now.month]} {now.year}"
-
-    # Убираем секунды из длины дня
     h, rem = divmod(int(length_day.total_seconds()), 3600)
-    m      = rem // 60
+    m = rem // 60
 
     return (
         f'🌍 <b>Погода в {city_name}</b> на {date}\n\n'
@@ -52,12 +50,9 @@ def _format(data: dict) -> str:
 def get_weather(city: str) -> str:
     """Погода по названию города."""
     try:
-        r = requests.get(
-            _API,
-            params={'q': city, 'appid': weather_token,
-                    'units': 'metric', 'lang': 'ru'},
-            verify=False, timeout=10,
-        )
+        r = requests.get(_API, params={
+            'q': city, 'appid': weather_token, 'units': 'metric', 'lang': 'ru',
+        }, verify=False, timeout=10)
         data = r.json()
         if data.get('cod') != 200:
             return f'❌ Город "<b>{html.escape(city)}</b>" не найден.'
@@ -71,12 +66,9 @@ def get_weather(city: str) -> str:
 def get_weather_by_coords(lat: float, lon: float) -> str:
     """Погода по координатам геолокации."""
     try:
-        r = requests.get(
-            _API,
-            params={'lat': lat, 'lon': lon, 'appid': weather_token,
-                    'units': 'metric', 'lang': 'ru'},
-            verify=False, timeout=10,
-        )
+        r = requests.get(_API, params={
+            'lat': lat, 'lon': lon, 'appid': weather_token, 'units': 'metric', 'lang': 'ru',
+        }, verify=False, timeout=10)
         data = r.json()
         if data.get('cod') != 200:
             return '❌ Не удалось определить погоду по геолокации.'

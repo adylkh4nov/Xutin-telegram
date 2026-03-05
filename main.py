@@ -1,15 +1,16 @@
+"""Точка входа — запуск бота."""
 import asyncio
 import logging
 
 from aiogram.types import BotCommand
-from bot_instance import bot, dp
-import answers  # регистрирует router с хендлерами
+
+from bot import bot, dp
+from handlers import router
 
 
 async def main():
-    dp.include_router(answers.router)
+    dp.include_router(router)
 
-    # Команды в меню Telegram (кнопка "/" у поля ввода)
     await bot.set_my_commands([
         BotCommand(command='news',    description='📰 Новости Tengri'),
         BotCommand(command='weather', description='🌤 Погода'),
@@ -27,8 +28,8 @@ if __name__ == '__main__':
         format='%(asctime)s [%(levelname)s] %(message)s',
         datefmt='%H:%M:%S',
         handlers=[
-            logging.StreamHandler(),                        # консоль
-            logging.FileHandler('bot.log', encoding='utf-8'),  # файл
+            logging.StreamHandler(),
+            logging.FileHandler('bot.log', encoding='utf-8'),
         ],
     )
     asyncio.run(main())
