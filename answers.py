@@ -1,117 +1,132 @@
-from bot_instance import bot
-from telebot import types
+from aiogram import Router, F
+from aiogram.filters import Command, StateFilter
+from aiogram.types import (
+    Message,
+    ReplyKeyboardMarkup, KeyboardButton,
+    InlineKeyboardMarkup, InlineKeyboardButton,
+)
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.enums import ChatAction
+
 import tenrgi
 import weather as w
 from config import claude_token
 import anthropic
 
-# История диалогов с Claude: {chat_id: [{"role": ..., "content": ...}]}
-_chat_history: dict = {}
+router = Router()
 
 
-def _get_markup():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(
-        types.KeyboardButton('/start'),
-        types.KeyboardButton('/news'),
-        types.KeyboardButton('/weather'),
-        types.KeyboardButton('/AI'),
+# ─── FSM состояния ───────────────────────────────────────────────────────────
+
+class WeatherStates(StatesGroup):
+    waiting = State()   # ждём город или геолокацию
+
+class AIStates(StatesGroup):
+    chatting = State()  # ждём запрос для Claude
+
+
+# ─── Клавиатуры ──────────────────────────────────────────────────────────────
+
+def _main_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text='/start'),   KeyboardButton(text='/news')],
+            [KeyboardButton(text='/weather'), KeyboardButton(text='/AI')],
+        ],
+        resize_keyboard=True,
     )
-    return markup
+
+def _weather_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text='📍 Моё местоположение', request_location=True)],
+            [KeyboardButton(text='❌ Отмена')],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
 
 
-# ──────────────────────────────── /start ────────────────────────────────
+# ─── /start ──────────────────────────────────────────────────────────────────
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(
-        message.chat.id,
+@router.message(Command('start'), StateFilter('*'))
+async def cmd_start(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
         f'Привет, {message.from_user.first_name}! 👋\n\nВыбери команду:',
-        reply_markup=_get_markup(),
+        reply_markup=_main_kb(),
     )
 
 
-# ──────────────────────────────── /news ─────────────────────────────────
+# ─── /news ───────────────────────────────────────────────────────────────────
 
-@bot.message_handler(commands=['news'])
-def news(message):
-    bot.send_chat_action(message.chat.id, 'typing')
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton('🔗 Открыть сайт', url='https://tengrinews.kz/'))
+@router.message(Command('news'), StateFilter('*'))
+async def cmd_news(message: Message):
+    await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text='🔗 Открыть сайт', url='https://tengrinews.kz/'),
+    ]])
     text = tenrgi.get_news()
-    bot.send_message(
-        message.chat.id, text,
-        reply_markup=markup,
-        parse_mode='HTML',
-        disable_web_page_preview=True,
-    )
+    await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
 
 
-# ─────────────────────────────── /weather ───────────────────────────────
+# ─── /weather ────────────────────────────────────────────────────────────────
 
-@bot.message_handler(commands=['weather'])
-def weather(message):
-    # Кнопка геолокации + отмена
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    markup.add(types.KeyboardButton('📍 Моё местоположение', request_location=True))
-    markup.add(types.KeyboardButton('❌ Отмена'))
-    mesg = bot.send_message(
-        message.chat.id,
+@router.message(Command('weather'), StateFilter('*'))
+async def cmd_weather(message: Message, state: FSMContext):
+    await state.set_state(WeatherStates.waiting)
+    await message.answer(
         '🏙 Введите название города или отправьте геолокацию:',
-        reply_markup=markup,
+        reply_markup=_weather_kb(),
     )
-    bot.register_next_step_handler(mesg, _handle_weather_input)
+
+@router.message(WeatherStates.waiting, F.location)
+async def weather_by_location(message: Message, state: FSMContext):
+    await state.clear()
+    await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
+    text = w.get_weather_by_coords(message.location.latitude, message.location.longitude)
+    await message.answer(text, reply_markup=_main_kb())
+
+@router.message(WeatherStates.waiting, F.text == '❌ Отмена')
+async def weather_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer('Отменено.', reply_markup=_main_kb())
+
+@router.message(WeatherStates.waiting, F.text)
+async def weather_by_city(message: Message, state: FSMContext):
+    await state.clear()
+    await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
+    text = w.get_weather(message.text.strip())
+    await message.answer(text, reply_markup=_main_kb())
 
 
-def _handle_weather_input(message):
-    # Отмена
-    if message.text and message.text.strip() == '❌ Отмена':
-        bot.send_message(message.chat.id, 'Отменено.', reply_markup=_get_markup())
-        return
+# ─── /AI ─────────────────────────────────────────────────────────────────────
 
-    bot.send_chat_action(message.chat.id, 'typing')
-
-    if message.location:
-        text = w.get_weather_by_coords(
-            message.location.latitude,
-            message.location.longitude,
-        )
-    else:
-        text = w.get_weather(message.text.strip())
-
-    bot.send_message(message.chat.id, text, parse_mode='HTML', reply_markup=_get_markup())
-
-
-# ──────────────────────────────── /AI ───────────────────────────────────
-
-@bot.message_handler(commands=['AI'])
-def ai_start(message):
-    mesg = bot.reply_to(
-        message,
+@router.message(Command('AI'), StateFilter('*'))
+async def cmd_ai(message: Message, state: FSMContext):
+    await state.set_state(AIStates.chatting)
+    await message.answer(
         '🤖 Введите запрос для Claude:\n\n'
-        '<i>Напишите /clear чтобы очистить историю диалога</i>',
-        parse_mode='HTML',
+        '<i>Claude помнит историю диалога. /clear — очистить историю.</i>',
     )
-    bot.register_next_step_handler(mesg, _get_claude_response)
 
+@router.message(Command('clear'), StateFilter('*'))
+async def cmd_clear(message: Message, state: FSMContext):
+    await state.update_data(history=[])
+    await message.answer('🗑 История диалога очищена.')
 
-@bot.message_handler(commands=['clear'])
-def clear_history(message):
-    _chat_history.pop(message.chat.id, None)
-    bot.send_message(message.chat.id, '🗑 История диалога очищена.')
+@router.message(AIStates.chatting, F.text)
+async def ai_chat(message: Message, state: FSMContext):
+    await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
 
-
-def _get_claude_response(message):
-    chat_id = message.chat.id
-    bot.send_chat_action(chat_id, 'typing')
-
-    history = _chat_history.setdefault(chat_id, [])
+    data = await state.get_data()
+    history: list = data.get('history', [])
     history.append({'role': 'user', 'content': message.text})
 
     # Ограничиваем историю последними 20 сообщениями (10 пар)
     if len(history) > 20:
         history = history[-20:]
-        _chat_history[chat_id] = history
 
     try:
         client = anthropic.Anthropic(api_key=claude_token)
@@ -122,6 +137,7 @@ def _get_claude_response(message):
         )
         reply = response.content[0].text
         history.append({'role': 'assistant', 'content': reply})
-        bot.send_message(chat_id, reply)
+        await state.update_data(history=history)
+        await message.answer(reply)
     except Exception as e:
-        bot.send_message(chat_id, f'Ошибка Claude: {e}')
+        await message.answer(f'Ошибка Claude: {e}')
