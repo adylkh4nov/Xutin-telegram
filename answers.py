@@ -81,7 +81,8 @@ async def cmd_weather(message: Message, state: FSMContext):
         reply_markup=_weather_kb(),
     )
 
-@router.message(WeatherStates.waiting, F.location)
+# Геолокация работает в ЛЮБОМ состоянии — кнопка может остаться на экране
+@router.message(F.location, StateFilter('*'))
 async def weather_by_location(message: Message, state: FSMContext):
     await state.clear()
     await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
