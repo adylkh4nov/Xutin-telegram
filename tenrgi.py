@@ -1,43 +1,60 @@
-import requests
+import html
 import warnings
-from bs4 import BeautifulSoup as b
+import requests
+from bs4 import BeautifulSoup as bs
 
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
-URL_Tengri = 'https://tengrinews.kz/'
+BASE_URL = 'https://tengrinews.kz'
+URL_TENGRI = f'{BASE_URL}/'
 
 
-def parse_tengri(url):
+def _abs(href: str) -> str:
+    """Превращает относительный URL в абсолютный."""
+    if href.startswith('http'):
+        return href
+    return BASE_URL + href
+
+
+def parse_tengri(url: str) -> list[tuple[str, str]]:
+    """Возвращает список (заголовок, ссылка)."""
     r = requests.get(url, verify=False, timeout=10)
     r.encoding = 'utf-8'
-    soup = b(r.text, 'html.parser')
+    soup = bs(r.text, 'html.parser')
+
+    results = []
 
     # Главные новости (большие карточки)
-    super_items = soup.find_all('div', class_='main-news_super_item_title')
-    # Топ новости (список справа)
-    top_items = soup.find_all('div', class_='main-news_top_item_data')
+    for div in soup.find_all('div', class_='main-news_super_item_title'):
+        a = div.find_parent('a') or div.find('a')
+        title = div.get_text(strip=True)
+        link = _abs(a['href']) if a else URL_TENGRI
+        if title:
+            results.append((title, link))
 
-    news_list = []
-    for item in super_items:
-        text = item.get_text(strip=True)
-        if text:
-            news_list.append(text)
-    for item in top_items:
-        text = item.get_text(strip=True)
-        if text:
-            news_list.append(text)
+    # Топ-новости (список)
+    for div in soup.find_all('div', class_='main-news_top_item_data'):
+        a = div.find_parent('a') or div.find('a')
+        title = div.get_text(strip=True)
+        link = _abs(a['href']) if a else URL_TENGRI
+        if title:
+            results.append((title, link))
 
-    return news_list
+    return results
 
 
-def get_news():
+def get_news() -> str:
+    """Возвращает HTML-строку со ссылками для Telegram."""
     try:
-        items = parse_tengri(URL_Tengri)
+        items = parse_tengri(URL_TENGRI)
         if not items:
             return 'Новости не найдены'
-        result = '📰 *Новости Tengri News:*\n\n'
-        for i, item in enumerate(items[:7], 1):
-            result += f'{i}. {item}\n\n'
-        return result
+
+        lines = ['<b>📰 Новости Tengri News:</b>\n']
+        for i, (title, link) in enumerate(items[:7], 1):
+            safe_title = html.escape(title)
+            lines.append(f'{i}. <a href="{link}">{safe_title}</a>')
+
+        return '\n'.join(lines)
     except Exception as e:
-        return f'Ошибка при получении новостей: {e}'
+        return f'Ошибка при получении новостей: {html.escape(str(e))}'
