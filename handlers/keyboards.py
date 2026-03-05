@@ -7,7 +7,7 @@ def main_kb() -> ReplyKeyboardMarkup:
         keyboard=[[
             KeyboardButton(text='/news'),
             KeyboardButton(text='/weather'),
-            KeyboardButton(text='/AI'),
+            KeyboardButton(text='/ai'),
         ]],
         resize_keyboard=True,
     )

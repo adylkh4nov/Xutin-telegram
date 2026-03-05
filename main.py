@@ -14,7 +14,7 @@ async def main():
     await bot.set_my_commands([
         BotCommand(command='news',    description='📰 Новости Tengri'),
         BotCommand(command='weather', description='🌤 Погода'),
-        BotCommand(command='AI',      description='🤖 Спросить Claude'),
+        BotCommand(command='ai',      description='🤖 Спросить Claude'),
         BotCommand(command='clear',   description='🗑 Очистить историю Claude'),
     ])
 

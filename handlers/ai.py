@@ -18,7 +18,7 @@ class AIStates(StatesGroup):
     chatting = State()
 
 
-@router.message(Command('AI'), StateFilter('*'))
+@router.message(Command('ai'), StateFilter('*'))
 async def cmd_ai(message: Message, state: FSMContext):
     await state.set_state(AIStates.chatting)
     await message.answer(
