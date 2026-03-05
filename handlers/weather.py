@@ -24,7 +24,9 @@ class WeatherStates(StatesGroup):
 async def cmd_weather(message: Message, state: FSMContext):
     await state.set_state(WeatherStates.waiting)
     await message.answer(
-        '🏙 Введите название города или отправьте геолокацию:',
+        '🏙 Введите название города или отправьте геолокацию:\n\n'
+        '<i>Если геолокация недоступна — проверьте разрешения:\n'
+        'Настройки → Telegram → Геопозиция → При использовании</i>',
         reply_markup=weather_kb(),
     )
 
