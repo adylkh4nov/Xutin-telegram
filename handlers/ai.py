@@ -9,6 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.enums import ChatAction
 
 from config import claude_token
+from .utils import user_tag, short
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class AIStates(StatesGroup):
 @router.message(Command('ai'), StateFilter('*'))
 async def cmd_ai(message: Message, state: FSMContext):
     await state.set_state(AIStates.chatting)
+    log.info('%s /ai → начал диалог с Claude', user_tag(message.from_user))
     await message.answer(
         '🤖 Введите запрос для Claude:\n\n'
         '<i>Claude помнит историю диалога. /clear — очистить историю.</i>',
@@ -30,11 +32,14 @@ async def cmd_ai(message: Message, state: FSMContext):
 @router.message(Command('clear'), StateFilter('*'))
 async def cmd_clear(message: Message, state: FSMContext):
     await state.update_data(history=[])
+    log.info('%s /clear — история очищена', user_tag(message.from_user))
     await message.answer('🗑 История диалога очищена.')
 
 
 @router.message(AIStates.chatting, F.text)
 async def ai_chat(message: Message, state: FSMContext):
+    user = user_tag(message.from_user)
+    log.info('%s /ai → "%s"', user, short(message.text))
     await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
 
     data = await state.get_data()
@@ -57,7 +62,8 @@ async def ai_chat(message: Message, state: FSMContext):
         reply = response.content[0].text
         history.append({'role': 'assistant', 'content': reply})
         await state.update_data(history=history)
+        log.info('%s /ai ← "%s"', user, short(reply))
         await message.answer(reply)
     except Exception as e:
-        log.error('claude error: %s', e)
+        log.error('%s /ai ← ОШИБКА: %s', user, e)
         await message.answer(f'❌ Ошибка Claude: {e}')
