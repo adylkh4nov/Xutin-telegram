@@ -1,15 +1,12 @@
 import datetime
 import locale
-from time import sleep
 from bot import bot
 from telebot import types
 import requests
-from bs4 import BeautifulSoup as b
 import tenrgi
 from datetime import datetime as d
-from config import weather_token
-import openai
-from config import openai_token
+from config import weather_token, claude_token
+import anthropic
 
 
 @bot.message_handler(commands=['start'])
@@ -19,8 +16,8 @@ def start(message):
     Start = types.KeyboardButton('/start')
     News = types.KeyboardButton('/news')
     Weather = types.KeyboardButton('/weather')
-    ChatGPT = types.KeyboardButton('/ChatGPT')
-    markup.add(Start, News, Weather, ChatGPT)
+    Claude = types.KeyboardButton('/Claude')
+    markup.add(Start, News, Weather, Claude)
     bot.send_message(message.chat.id, mess, reply_markup=markup)
 
 
@@ -72,20 +69,18 @@ def get_message(message):
 
 def getChatMessage(message):
     print(message.from_user)
-    openai.api_key = openai_token
-    response = openai.Completion.create(
-        model="text-davinci-003",
-        prompt=message.text,
-        temperature=0.5,
+    client = anthropic.Anthropic(api_key=claude_token)
+    response = client.messages.create(
+        model="claude-opus-4-6",
         max_tokens=2000,
-        top_p=1.0,
-        frequency_penalty=0.5,
-        presence_penalty=0.0
+        messages=[
+            {"role": "user", "content": message.text}
+        ]
     )
-    bot.send_message(message.chat.id, response['choices'][0]['text'])
+    bot.send_message(message.chat.id, response.content[0].text)
 
 
-@bot.message_handler(commands=['ChatGPT'])
+@bot.message_handler(commands=['Claude'])
 def chat(message):
-    mesg = bot.reply_to(message, "Введите текст для ChatGPT")
+    mesg = bot.reply_to(message, "Введите текст для Claude")
     bot.register_next_step_handler(mesg, getChatMessage)
