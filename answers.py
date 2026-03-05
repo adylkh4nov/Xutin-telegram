@@ -167,3 +167,14 @@ async def ai_chat(message: Message, state: FSMContext):
     except Exception as e:
         log.error('claude error: %s', e)
         await message.answer(f'❌ Ошибка Claude: {e}')
+
+
+# ─── Catch-all — любое необработанное сообщение ──────────────────────────────
+
+@router.message(StateFilter('*'))
+async def fallback(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        'Выбери команду 👇',
+        reply_markup=_main_kb(),
+    )
