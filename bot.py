@@ -1,7 +1,2 @@
-
-from config import TOKEN
-import telebot
-
-
-bot = telebot.TeleBot(TOKEN)
+from bot_instance import bot
 import answers
