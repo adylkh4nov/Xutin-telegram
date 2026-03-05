@@ -16,5 +16,9 @@ if __name__ == '__main__':
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(message)s',
         datefmt='%H:%M:%S',
+        handlers=[
+            logging.StreamHandler(),                        # консоль
+            logging.FileHandler('bot.log', encoding='utf-8'),  # файл
+        ],
     )
     asyncio.run(main())
