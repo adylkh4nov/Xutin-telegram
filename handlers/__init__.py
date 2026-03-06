@@ -7,4 +7,4 @@ from .ai import router as ai_router
 from .start import router as start_router  # start/fallback — последним!
 
 router = Router()
-router.include_routers(news_router, weather_router, currency_router, ai_router, start_router)
+router.include_routers(news_router, currency_router, weather_router, ai_router, start_router)
