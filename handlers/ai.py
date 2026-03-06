@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import anthropic
+from datetime import date
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.types import Message
@@ -16,6 +17,9 @@ log = logging.getLogger(__name__)
 
 # Telegram ограничивает сообщение до 4096 символов
 _TG_LIMIT = 4096
+
+# Лимит запросов к Claude в сутки на одного пользователя
+_DAILY_LIMIT = 5
 
 
 class AIStates(StatesGroup):
@@ -100,9 +104,24 @@ async def cmd_clear(message: Message, state: FSMContext):
 async def ai_chat(message: Message, state: FSMContext):
     user = user_tag(message.from_user)
     log.info('%s /ai → "%s"', user, short(message.text))
-    await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
 
     data = await state.get_data()
+
+    # Проверка дневного лимита
+    today_str  = date.today().isoformat()
+    ai_date    = data.get('ai_date', '')
+    ai_count   = data.get('ai_count', 0) if ai_date == today_str else 0
+
+    if ai_count >= _DAILY_LIMIT:
+        log.warning('%s /ai ← лимит исчерпан (%d/%d)', user, ai_count, _DAILY_LIMIT)
+        await message.answer(
+            f'⛔ Лимит {_DAILY_LIMIT} запросов в сутки исчерпан.\n'
+            f'Возвращайтесь завтра!'
+        )
+        return
+
+    await message.bot.send_chat_action(message.chat.id, action=ChatAction.TYPING)
+
     history: list = data.get('history', [])
     history.append({'role': 'user', 'content': message.text})
 
@@ -121,9 +140,12 @@ async def ai_chat(message: Message, state: FSMContext):
         response = await asyncio.to_thread(_call_claude)
         reply = response.content[0].text
         history.append({'role': 'assistant', 'content': reply})
-        await state.update_data(history=history)
-        log.info('%s /ai ← "%s"', user, short(reply))
-        await message.answer(reply)
+        ai_count += 1
+        remaining = _DAILY_LIMIT - ai_count
+        await state.update_data(history=history, ai_date=today_str, ai_count=ai_count)
+        log.info('%s /ai ← "%s" (запросов сегодня: %d/%d)', user, short(reply), ai_count, _DAILY_LIMIT)
+        suffix = f'\n\n<i>Осталось запросов сегодня: {remaining}</i>' if remaining <= 2 else ''
+        await message.answer(reply + suffix)
     except Exception as e:
         log.error('%s /ai ← ОШИБКА: %s', user, e)
         await message.answer(f'❌ Ошибка Claude: {e}')

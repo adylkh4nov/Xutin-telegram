@@ -1,5 +1,8 @@
 import os
+from dotenv import load_dotenv
 
-TOKEN = os.environ['TOKEN']
-claude_token = os.environ['claude_token']
-weather_token = os.environ['weather_token']
+load_dotenv()
+
+TOKEN         = os.getenv('BOT_TOKEN')
+claude_token  = os.getenv('CLAUDE_TOKEN')
+weather_token = os.getenv('WEATHER_TOKEN')

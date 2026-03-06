@@ -1,14 +1,14 @@
-"""Получение погоды через OpenWeatherMap API."""
+"""Получение прогноза погоды через OpenWeatherMap Forecast API."""
 import html
 import datetime
 import warnings
 import requests
-from datetime import datetime as dt
+from collections import defaultdict
 from config import weather_token
 
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
-_API = 'https://api.openweathermap.org/data/2.5/weather'
+_FORECAST_API = 'https://api.openweathermap.org/data/2.5/forecast'
 
 _MONTHS = {
     1: 'января',   2: 'февраля',  3: 'марта',    4: 'апреля',
@@ -16,64 +16,135 @@ _MONTHS = {
     9: 'сентября', 10: 'октября', 11: 'ноября',   12: 'декабря',
 }
 
+_DAY_NAMES = {0: 'Пн', 1: 'Вт', 2: 'Ср', 3: 'Чт', 4: 'Пт', 5: 'Сб', 6: 'Вс'}
 
-def _format(data: dict) -> str:
-    """Форматирует JSON-ответ OWM в HTML-строку."""
-    city_name   = html.escape(data['name'])
-    cur_weather = int(data['main']['temp'])
-    feels_like  = int(data['main']['feels_like'])
-    description = html.escape(data['weather'][0]['description'].capitalize())
-    humidity    = data['main']['humidity']
-    wind        = data['wind']['speed']
-    sunrise     = datetime.datetime.fromtimestamp(data['sys']['sunrise'])
-    sunset      = datetime.datetime.fromtimestamp(data['sys']['sunset'])
-    length_day  = sunset - sunrise
+_ICON_MAP = {
+    '01d': '☀️', '01n': '🌙',
+    '02d': '⛅', '02n': '⛅',
+    '03d': '🌥', '03n': '🌥',
+    '04d': '☁️', '04n': '☁️',
+    '09d': '🌧', '09n': '🌧',
+    '10d': '🌦', '10n': '🌧',
+    '11d': '⛈', '11n': '⛈',
+    '13d': '❄️', '13n': '❄️',
+    '50d': '🌫', '50n': '🌫',
+}
 
-    now  = dt.now()
-    date = f"{now.day} {_MONTHS[now.month]} {now.year}"
-    h, rem = divmod(int(length_day.total_seconds()), 3600)
-    m = rem // 60
 
-    return (
-        f'🌍 <b>Погода в {city_name}</b> на {date}\n\n'
-        f'🌡 Температура: <b>{cur_weather} °C</b>\n'
-        f'🤔 Ощущается как: {feels_like} °C\n'
-        f'☁️ {description}\n'
-        f'💧 Влажность: {humidity}%\n'
-        f'💨 Ветер: {wind} м/с\n'
-        f'🌅 Восход: {sunrise.strftime("%H:%M")}\n'
-        f'🌇 Закат:  {sunset.strftime("%H:%M")}\n'
-        f'⏱ Длина дня: {h} ч {m} мин'
+def _icon(code: str) -> str:
+    return _ICON_MAP.get(code, '🌡')
+
+
+def _fetch_forecast(params: dict) -> dict | None:
+    try:
+        r = requests.get(_FORECAST_API, params={**params, 'cnt': 40,
+            'appid': weather_token, 'units': 'metric', 'lang': 'ru'},
+            verify=False, timeout=10)
+        data = r.json()
+        return data if str(data.get('cod')) == '200' else None
+    except Exception:
+        return None
+
+
+# ──────────────── Single day forecast ────────────────
+
+def _format_day(data: dict, day: str) -> str:
+    city_name  = html.escape(data['city']['name'])
+    tz_offset  = datetime.timedelta(seconds=data['city']['timezone'])
+    now_local  = datetime.datetime.utcnow() + tz_offset
+    today      = now_local.date()
+    target     = today if day == 'today' else today + datetime.timedelta(days=1)
+
+    slots = []
+    for item in data['list']:
+        dt_local = datetime.datetime.utcfromtimestamp(item['dt']) + tz_offset
+        if dt_local.date() == target:
+            slots.append((dt_local, item))
+
+    if not slots:
+        label = 'сегодня' if day == 'today' else 'завтра'
+        return f'❌ Нет данных о погоде на {label}.'
+
+    day_label  = 'сегодня' if day == 'today' else 'завтра'
+    date_label = f'{target.day} {_MONTHS[target.month]}'
+    lines = [f'🌍 <b>Погода в {city_name}</b> — {day_label}, {date_label}\n']
+
+    temps, winds, humidities = [], [], []
+    for dt_local, item in slots:
+        temp  = round(item['main']['temp'])
+        feels = round(item['main']['feels_like'])
+        icon  = _icon(item['weather'][0]['icon'])
+        desc  = item['weather'][0]['description'].capitalize()
+        wind  = item['wind']['speed']
+        hum   = item['main']['humidity']
+        temps.append(temp); winds.append(wind); humidities.append(hum)
+        lines.append(
+            f'<code>{dt_local.strftime("%H:%M")}</code>  '
+            f'<b>{temp:+d}°C</b> (ощущ. {feels:+d}°C)  {icon} {desc}'
+        )
+
+    lines.append(
+        f'\n📊 Мин: <b>{min(temps):+d}°C</b>  |  Макс: <b>{max(temps):+d}°C</b>\n'
+        f'💨 Ветер: до {max(winds):.0f} м/с  |  💧 Влажность: ~{round(sum(humidities)/len(humidities))}%'
     )
+    return '\n'.join(lines)
 
 
-def get_weather(city: str) -> str:
-    """Погода по названию города."""
-    try:
-        r = requests.get(_API, params={
-            'q': city, 'appid': weather_token, 'units': 'metric', 'lang': 'ru',
-        }, verify=False, timeout=10)
-        data = r.json()
-        if data.get('cod') != 200:
-            return f'❌ Город "<b>{html.escape(city)}</b>" не найден.'
-        return _format(data)
-    except requests.exceptions.RequestException as e:
-        return f'❌ Ошибка сети: {html.escape(str(e))}'
-    except Exception:
-        return '❌ Не удалось получить погоду. Проверьте название города.'
+# ──────────────── 5-day summary ────────────────
+
+def _format_5days(data: dict) -> str:
+    city_name = html.escape(data['city']['name'])
+    tz_offset = datetime.timedelta(seconds=data['city']['timezone'])
+    today     = (datetime.datetime.utcnow() + tz_offset).date()
+
+    by_day = defaultdict(list)
+    for item in data['list']:
+        dt_local = datetime.datetime.utcfromtimestamp(item['dt']) + tz_offset
+        by_day[dt_local.date()].append(item)
+
+    lines = [f'🌍 <b>Прогноз на 5 дней — {city_name}</b>\n']
+
+    for date_key in sorted(by_day.keys()):
+        items  = by_day[date_key]
+        temps  = [round(i['main']['temp']) for i in items]
+        winds  = [i['wind']['speed'] for i in items]
+        humids = [i['main']['humidity'] for i in items]
+        icons  = [i['weather'][0]['icon'] for i in items]
+        desc   = max(set(i['weather'][0]['description'] for i in items),
+                     key=lambda d: sum(1 for i in items if i['weather'][0]['description'] == d))
+
+        day_nm = _DAY_NAMES[date_key.weekday()]
+        date_s = f'{date_key.day} {_MONTHS[date_key.month]}'
+        main_icon = _icon(max(set(icons), key=icons.count))
+
+        if date_key == today:
+            suffix = ' (сегодня)'
+        elif date_key == today + datetime.timedelta(days=1):
+            suffix = ' (завтра)'
+        else:
+            suffix = ''
+
+        lines.append(
+            f'<b>{day_nm}, {date_s}{suffix}</b>\n'
+            f'  {main_icon} {desc.capitalize()}\n'
+            f'  🌡 {min(temps):+d}°C / {max(temps):+d}°C  '
+            f'💨 {max(winds):.0f} м/с  💧 {round(sum(humids)/len(humids))}%'
+        )
+
+    return '\n\n'.join(lines)
 
 
-def get_weather_by_coords(lat: float, lon: float) -> str:
-    """Погода по координатам геолокации."""
-    try:
-        r = requests.get(_API, params={
-            'lat': lat, 'lon': lon, 'appid': weather_token, 'units': 'metric', 'lang': 'ru',
-        }, verify=False, timeout=10)
-        data = r.json()
-        if data.get('cod') != 200:
-            return '❌ Не удалось определить погоду по геолокации.'
-        return _format(data)
-    except requests.exceptions.RequestException as e:
-        return f'❌ Ошибка сети: {html.escape(str(e))}'
-    except Exception:
-        return '❌ Не удалось получить погоду по геолокации.'
+# ──────────────── Public API ────────────────
+
+def get_forecast(city: str, day: str) -> str:
+    data = _fetch_forecast({'q': city})
+    if data is None:
+        return f'❌ Город "<b>{html.escape(city)}</b>" не найден.'
+    return (_format_5days if day == 'week' else _format_day)(data, *(() if day == 'week' else (day,)))
+
+
+def get_forecast_by_coords(lat: float, lon: float, day: str) -> str:
+    data = _fetch_forecast({'lat': lat, 'lon': lon})
+    if data is None:
+        return '❌ Не удалось определить погоду по геолокации.'
+    return (_format_5days if day == 'week' else _format_day)(data, *(() if day == 'week' else (day,)))
