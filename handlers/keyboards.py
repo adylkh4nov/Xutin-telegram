@@ -1,4 +1,7 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import (
+    ReplyKeyboardMarkup, KeyboardButton,
+    InlineKeyboardMarkup, InlineKeyboardButton,
+)
 
 
 def main_kb() -> ReplyKeyboardMarkup:
@@ -23,3 +26,11 @@ def weather_kb() -> ReplyKeyboardMarkup:
         resize_keyboard=True,
         one_time_keyboard=True,
     )
+
+
+def weather_day_kb() -> InlineKeyboardMarkup:
+    """Инлайн-клавиатура выбора дня прогноза."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text='📅 Сегодня', callback_data='weather:today'),
+        InlineKeyboardButton(text='📅 Завтра',  callback_data='weather:tomorrow'),
+    ]])
