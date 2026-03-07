@@ -33,16 +33,22 @@ class WeatherStates(StatesGroup):
 @router.message(Command('weather'), StateFilter('*'))
 async def cmd_weather(message: Message, state: FSMContext):
     data = await state.get_data()
-    last_city = data.get('last_city')
+    last_city   = data.get('last_city')
+    last_coords = data.get('last_coords')
 
     await state.set_state(WeatherStates.waiting)
     log.info('%s /weather → ожидает город', user_tag(message.from_user))
 
-    if last_city:
+    if last_city or last_coords:
+        parts = []
+        if last_city:
+            parts.append(f'🏙 Последний город: <b>{last_city}</b>')
+        if last_coords:
+            parts.append('📍 Или используйте последнее местоположение')
+        parts.append('\nНажмите кнопку или введите другой город:')
         await message.answer(
-            f'🏙 Последний город: <b>{last_city}</b>\n\n'
-            f'Нажмите кнопку или введите другой:',
-            reply_markup=weather_city_kb(last_city),
+            '\n'.join(parts),
+            reply_markup=weather_city_kb(city=last_city or '', has_last_coords=bool(last_coords)),
         )
     else:
         await message.answer(
@@ -71,6 +77,23 @@ async def weather_cancel(message: Message, state: FSMContext):
     await state.set_state(None)
     log.info('%s /weather → отмена', user_tag(message.from_user))
     await message.answer('Отменено.', reply_markup=main_kb())
+
+
+@router.message(WeatherStates.waiting, F.text == '📍 Последнее место')
+async def weather_last_location(message: Message, state: FSMContext):
+    data = await state.get_data()
+    last_coords = data.get('last_coords')
+    if not last_coords:
+        await message.answer(
+            '❌ Нет сохранённого местоположения.',
+            reply_markup=weather_kb(),
+        )
+        return
+    lat, lon = last_coords
+    log.info('%s /weather → последнее место (%.4f, %.4f)', user_tag(message.from_user), lat, lon)
+    await state.update_data(coords=(lat, lon), city=None)
+    await state.set_state(WeatherStates.waiting_day)
+    await message.answer('📅 Выберите период:', reply_markup=weather_day_kb())
 
 
 @router.message(WeatherStates.waiting, F.text)
@@ -113,7 +136,9 @@ async def weather_day_selected(callback: CallbackQuery, state: FSMContext):
                 asyncio.to_thread(weather_service.get_forecast_by_coords, lat, lon, day),
                 timeout=_WEATHER_TIMEOUT,
             )
-            # Для геолокации город не запоминаем
+            # Сохраняем координаты если прогноз получен успешно
+            if not text.startswith('❌'):
+                await state.update_data(last_coords=(lat, lon))
         else:
             city = data.get('city', '')
             text = await asyncio.wait_for(

@@ -4,6 +4,7 @@ import math
 import warnings
 import datetime
 import requests
+from urllib.parse import quote
 
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
@@ -25,6 +26,37 @@ _CURRENCY_FLAG = {
     'USD': '🇺🇸', 'EUR': '🇪🇺', 'RUB': '🇷🇺',
     'CNY': '🇨🇳', 'GBP': '🇬🇧',
 }
+
+# Слаги городов для ссылок на 2GIS
+_2GIS_SLUG = {
+    'almaty':   'almaty',
+    'astana':   'astana',
+    'shymkent': 'shymkent',
+    'pavlodar': 'pavlodar',
+    'kostanay': 'kostanay',
+}
+_CITY_NAME_TO_2GIS = {
+    'Алматы':     'almaty',
+    'Нур-Султан': 'astana',
+    'Астана':     'astana',
+    'Шымкент':    'shymkent',
+    'Павлодар':   'pavlodar',
+    'Костанай':   'kostanay',
+}
+
+
+def _2gis_link(p: dict, city_slug: str = '') -> str:
+    """Ссылка на 2GIS для обменника."""
+    try:
+        p_lat = float(p.get('lat') or 0)
+        p_lon = float(p.get('lng') or 0)
+    except (TypeError, ValueError):
+        p_lat = p_lon = 0.0
+    if p_lat and p_lon:
+        slug = _2GIS_SLUG.get(city_slug) or _CITY_NAME_TO_2GIS.get(p.get('city', ''), 'almaty')
+        return f'https://2gis.kz/{slug}/geo/{p_lon},{p_lat}'
+    name = p.get('name', '')
+    return f'https://2gis.kz/search/{quote(name)}'
 
 
 def _fetch() -> list[dict]:
@@ -107,11 +139,12 @@ def get_rates(currency: str, city_slug: str = 'almaty') -> str:
         name    = html.escape(p.get('name', '—'))
         addr    = html.escape(p.get('mainaddress') or p.get('address') or '—')
         status  = _work_status(p)
+        link    = _2gis_link(p, city_slug)
 
         lines.append(
             f'<b>{i}. {name}</b>  {status}\n'
             f'   🛒 Покупка: <b>{buy:.2f}</b>  |  💰 Продажа: <b>{sell:.2f}</b>\n'
-            f'   📍 {addr}'
+            f'   📍 <a href="{link}">{addr}</a>'
         )
 
     return '\n\n'.join(lines)
@@ -156,13 +189,14 @@ def get_nearest(lat: float, lon: float, currency: str, radius_km: float = 10.0) 
         name      = html.escape(p.get('name', '—'))
         addr      = html.escape(p.get('mainaddress') or p.get('address') or '—')
         status    = _work_status(p)
+        link      = _2gis_link(p)
 
         dist_str = f'{dist * 1000:.0f} м' if dist < 1 else f'{dist:.1f} км'
 
         lines.append(
             f'<b>{name}</b>  {status}\n'
             f'   🛒 Покупка: <b>{buy:.2f}</b>  |  💰 Продажа: <b>{sell:.2f}</b>\n'
-            f'   📍 {addr}\n'
+            f'   📍 <a href="{link}">{addr}</a>\n'
             f'   🚶 {dist_str}'
         )
 

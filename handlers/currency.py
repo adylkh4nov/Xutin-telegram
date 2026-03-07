@@ -32,13 +32,9 @@ async def cmd_currency(message: Message, state: FSMContext):
     city_label = currency_service.CITIES.get(last_city, 'Алматы')
     log.info('%s /currency (last: %s %s)', user_tag(message.from_user), last_cur, last_city)
 
-    hint = ''
-    if last_cur:
-        hint = f'\n<i>Последний запрос: {last_cur} в {city_label}</i>'
-
     await message.answer(
-        f'💱 Выберите валюту:{hint}',
-        reply_markup=currency_choose_kb(last_cur),
+        '💱 Выберите валюту:',
+        reply_markup=currency_choose_kb(last_cur, city_label if last_cur else ''),
     )
 
 
@@ -154,6 +150,22 @@ async def currency_switch(callback: CallbackQuery, state: FSMContext):
         '💱 Выберите валюту:',
         reply_markup=currency_choose_kb(last_cur),
     )
+
+
+# ──────────────── Повторить последний запрос ────────────────
+
+@router.callback_query(F.data == 'cur_repeat', StateFilter('*'))
+async def currency_repeat(callback: CallbackQuery, state: FSMContext):
+    data      = await state.get_data()
+    currency  = data.get('last_currency', 'USD')
+    city_slug = data.get('last_currency_city', 'almaty')
+
+    await callback.answer()
+    await callback.message.edit_text(
+        f'💱 {currency} — {currency_service.CITIES.get(city_slug, city_slug)}…',
+        reply_markup=None,
+    )
+    await _show_rates(callback.message, state, currency, city_slug)
 
 
 # ──────────────── Helpers ────────────────

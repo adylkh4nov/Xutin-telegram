@@ -31,17 +31,16 @@ def weather_kb() -> ReplyKeyboardMarkup:
     )
 
 
-def weather_city_kb(city: str) -> ReplyKeyboardMarkup:
-    """Клавиатура с кнопкой сохранённого города."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=f'🏙 {city}')],
-            [KeyboardButton(text='📍 Моё местоположение', request_location=True)],
-            [KeyboardButton(text='❌ Отмена')],
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
+def weather_city_kb(city: str = '', has_last_coords: bool = False) -> ReplyKeyboardMarkup:
+    """Клавиатура с кнопками последнего города и/или геолокации."""
+    kb = []
+    if city:
+        kb.append([KeyboardButton(text=f'🏙 {city}')])
+    if has_last_coords:
+        kb.append([KeyboardButton(text='📍 Последнее место')])
+    kb.append([KeyboardButton(text='📍 Моё местоположение', request_location=True)])
+    kb.append([KeyboardButton(text='❌ Отмена')])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, one_time_keyboard=True)
 
 
 # ──────────────── Weather inline ────────────────
@@ -57,7 +56,7 @@ def weather_day_kb() -> InlineKeyboardMarkup:
 
 # ──────────────── Currency inline ────────────────
 
-def currency_choose_kb(last_currency: str = '') -> InlineKeyboardMarkup:
+def currency_choose_kb(last_currency: str = '', last_city_label: str = '') -> InlineKeyboardMarkup:
     """Выбор валюты."""
     currencies = [
         ('🇺🇸 USD', 'cur:USD'),
@@ -73,8 +72,13 @@ def currency_choose_kb(last_currency: str = '') -> InlineKeyboardMarkup:
         )
         for label, cb in currencies
     ]
-    # 3 + 2 layout
-    return InlineKeyboardMarkup(inline_keyboard=[buttons[:3], buttons[3:]])
+    rows = [buttons[:3], buttons[3:]]
+    if last_currency and last_city_label:
+        rows.append([InlineKeyboardButton(
+            text=f'🔄 Повторить: {last_currency} · {last_city_label}',
+            callback_data='cur_repeat',
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def currency_action_kb(currency: str) -> InlineKeyboardMarkup:
